@@ -1,5 +1,4 @@
 import 'rxjs/add/operator/takeUntil';
-import 'rxjs/add/operator/takeUntil';
 import { DoCheck, ElementRef, EventEmitter, IterableDiffers, OnChanges, OnDestroy, OnInit, SimpleChanges } from '@angular/core';
 import { AbstractControl, ControlValueAccessor, FormBuilder, FormControl, Validator } from '@angular/forms';
 import { Observable } from 'rxjs/Observable';
@@ -26,8 +25,10 @@ export declare class MultiselectDropdown implements OnInit, OnChanges, DoCheck, 
     onClick(target: HTMLElement): void;
     destroyed$: Subject<any>;
     filteredOptions: IMultiSelectOption[];
+    lazyLoadOptions: IMultiSelectOption[];
     renderFilteredOptions: IMultiSelectOption[];
     model: any[];
+    prevModel: any[];
     parents: any[];
     title: string;
     differ: any;
@@ -52,6 +53,7 @@ export declare class MultiselectDropdown implements OnInit, OnChanges, DoCheck, 
     ngOnDestroy(): void;
     updateRenderItems(): void;
     applyFilters(options: any, value: any): IMultiSelectOption[];
+    fireModelChange(): void;
     onModelChange: Function;
     onModelTouched: Function;
     writeValue(value: any): void;

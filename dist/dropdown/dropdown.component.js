@@ -1,6 +1,5 @@
 import 'rxjs/add/operator/takeUntil';
-import 'rxjs/add/operator/takeUntil';
-import { Component, ElementRef, EventEmitter, forwardRef, HostListener, Input, IterableDiffers, Output } from '@angular/core';
+import { Component, ElementRef, EventEmitter, forwardRef, HostListener, Input, IterableDiffers, Output, } from '@angular/core';
 import { FormBuilder, NG_VALUE_ACCESSOR, } from '@angular/forms';
 import { Subject } from 'rxjs/Subject';
 import { MultiSelectSearchFilter } from './search-filter.pipe';
@@ -32,8 +31,10 @@ var MultiselectDropdown = /** @class */ (function () {
         this.onFilter = this.filterControl.valueChanges;
         this.destroyed$ = new Subject();
         this.filteredOptions = [];
+        this.lazyLoadOptions = [];
         this.renderFilteredOptions = [];
         this.model = [];
+        this.prevModel = [];
         this.numSelected = 0;
         this.renderItems = true;
         this.checkAllSearchRegister = new Set();
@@ -62,7 +63,8 @@ var MultiselectDropdown = /** @class */ (function () {
             isLazyLoad: false,
             stopScrollPropagation: false,
             loadViewDistance: 1,
-            selectAddedValues: false
+            selectAddedValues: false,
+            ignoreLabels: false
         };
         this.defaultTexts = {
             checkAll: 'Check all',
@@ -145,17 +147,18 @@ var MultiselectDropdown = /** @class */ (function () {
         }
     };
     MultiselectDropdown.prototype.ngOnInit = function () {
+        var _this = this;
         this.settings = Object.assign(this.defaultSettings, this.settings);
         this.texts = Object.assign(this.defaultTexts, this.texts);
         this.title = this.texts.defaultTitle || '';
         this.filterControl.valueChanges
             .takeUntil(this.destroyed$)
             .subscribe(function () {
-            this.updateRenderItems();
-            if (this.settings.isLazyLoad) {
-                this.load();
+            _this.updateRenderItems();
+            if (_this.settings.isLazyLoad) {
+                _this.load();
             }
-        }.bind(this));
+        });
     };
     MultiselectDropdown.prototype.ngOnChanges = function (changes) {
         var _this = this;
@@ -165,10 +168,10 @@ var MultiselectDropdown = /** @class */ (function () {
                 .filter(function (option) { return typeof option.parentId === 'number'; })
                 .map(function (option) { return option.parentId; });
             this.updateRenderItems();
-            if (this.settings.selectAddedValues && this.loadedValueIds.length === 0) {
+            if (this.settings.isLazyLoad && this.settings.selectAddedValues && this.loadedValueIds.length === 0) {
                 this.loadedValueIds = this.loadedValueIds.concat(changes.options.currentValue.map(function (value) { return value.id; }));
             }
-            if (this.settings.selectAddedValues && changes.options.previousValue) {
+            if (this.settings.isLazyLoad && this.settings.selectAddedValues && changes.options.previousValue) {
                 var addedValues_1 = changes.options.currentValue.filter(function (value) { return _this.loadedValueIds.indexOf(value.id) === -1; });
                 this.loadedValueIds.concat(addedValues_1.map(function (value) { return value.id; }));
                 if (this.checkAllStatus) {
@@ -181,8 +184,7 @@ var MultiselectDropdown = /** @class */ (function () {
             if (this.texts) {
                 this.updateTitle();
             }
-            this.onModelChange(this.model);
-            this.onModelTouched();
+            this.fireModelChange();
         }
         if (changes['texts'] && !changes['texts'].isFirstChange()) {
             this.updateTitle();
@@ -198,6 +200,13 @@ var MultiselectDropdown = /** @class */ (function () {
     };
     MultiselectDropdown.prototype.applyFilters = function (options, value) {
         return (this.searchFilter.transform(options, value, this.settings.searchMaxLimit, this.settings.searchMaxRenderedItems));
+    };
+    MultiselectDropdown.prototype.fireModelChange = function () {
+        if (this.model != this.prevModel) {
+            this.prevModel = this.model;
+            this.onModelChange(this.model);
+            this.onModelTouched();
+        }
     };
     MultiselectDropdown.prototype.writeValue = function (value) {
         if (value !== undefined && value !== null) {
@@ -271,11 +280,14 @@ var MultiselectDropdown = /** @class */ (function () {
             }
             var index = this.model.indexOf(option.id);
             var isAtSelectionLimit = this.settings.selectionLimit > 0 && this.model.length >= this.settings.selectionLimit;
+            var removeItem_1 = function (idx, id) {
+                _this.model.splice(idx, 1);
+                _this.onRemoved.emit(id);
+                if (_this.settings.isLazyLoad && _this.lazyLoadOptions.some(function (val) { return val.id === id; })) {
+                    _this.lazyLoadOptions.splice(_this.lazyLoadOptions.indexOf(_this.lazyLoadOptions.find(function (val) { return val.id === id; })), 1);
+                }
+            };
             if (index > -1) {
-                var removeItem_1 = function (idx, id) {
-                    _this.model.splice(idx, 1);
-                    _this.onRemoved.emit(id);
-                };
                 if ((this.settings.minSelectionLimit === undefined) || (this.numSelected > this.settings.minSelectionLimit)) {
                     removeItem_1(index, option.id);
                 }
@@ -296,10 +308,13 @@ var MultiselectDropdown = /** @class */ (function () {
                 var addItem_1 = function (id) {
                     _this.model.push(id);
                     _this.onAdded.emit(id);
+                    if (_this.settings.isLazyLoad && !_this.lazyLoadOptions.some(function (val) { return val.id === id; })) {
+                        _this.lazyLoadOptions.push(option);
+                    }
                 };
                 addItem_1(option.id);
                 if (!isAtSelectionLimit) {
-                    if (option.parentId) {
+                    if (option.parentId && !this.settings.ignoreLabels) {
                         var children = this.options.filter(function (child) { return child.id !== option.id && child.parentId === option.parentId; });
                         if (children.every(function (child) { return _this.model.indexOf(child.id) > -1; })) {
                             addItem_1(option.parentId);
@@ -311,16 +326,14 @@ var MultiselectDropdown = /** @class */ (function () {
                     }
                 }
                 else {
-                    var removedOption = this.model.shift();
-                    this.onRemoved.emit(removedOption);
+                    removeItem_1(0, this.model[0]);
                 }
             }
             if (this.settings.closeOnSelect) {
                 this.toggleDropdown();
             }
             this.model = this.model.slice();
-            this.onModelChange(this.model);
-            this.onModelTouched();
+            this.fireModelChange();
         }
     };
     MultiselectDropdown.prototype.updateNumSelected = function () {
@@ -329,14 +342,19 @@ var MultiselectDropdown = /** @class */ (function () {
     };
     MultiselectDropdown.prototype.updateTitle = function () {
         var _this = this;
+        var numSelectedOptions = this.options.length;
+        if (this.settings.ignoreLabels) {
+            numSelectedOptions = this.options.filter(function (option) { return !option.isLabel; }).length;
+        }
         if (this.numSelected === 0 || this.settings.fixedTitle) {
             this.title = (this.texts) ? this.texts.defaultTitle : '';
         }
-        else if (this.settings.displayAllSelectedText && this.model.length === this.options.length) {
+        else if (this.settings.displayAllSelectedText && this.model.length === numSelectedOptions) {
             this.title = (this.texts) ? this.texts.allSelected : '';
         }
         else if (this.settings.dynamicTitleMaxItems && this.settings.dynamicTitleMaxItems >= this.numSelected) {
-            this.title = this.options
+            var useOptions = this.settings.isLazyLoad && this.lazyLoadOptions.length ? this.lazyLoadOptions : this.options;
+            this.title = useOptions
                 .filter(function (option) {
                 return _this.model.indexOf(option.id) > -1;
             })
@@ -353,20 +371,21 @@ var MultiselectDropdown = /** @class */ (function () {
         return this.settings.enableSearch && this.filterControl.value && this.filterControl.value.length > 0;
     };
     MultiselectDropdown.prototype.addChecks = function (options) {
+        var _this = this;
         var checkedOptions = options
             .filter(function (option) {
-            if (!option.disabled || (this.model.indexOf(option.id) === -1)) {
-                this.onAdded.emit(option.id);
+            if (!option.disabled || (_this.model.indexOf(option.id) === -1 && !(_this.settings.ignoreLabels && option.isLabel))) {
+                _this.onAdded.emit(option.id);
                 return true;
             }
             return false;
-        }.bind(this)).map(function (option) { return option.id; });
+        }).map(function (option) { return option.id; });
         this.model = this.model.concat(checkedOptions);
     };
     MultiselectDropdown.prototype.checkAll = function () {
         if (!this.disabledSelection) {
             this.addChecks(!this.searchFilterApplied() ? this.options : this.filteredOptions);
-            if (this.settings.selectAddedValues) {
+            if (this.settings.isLazyLoad && this.settings.selectAddedValues) {
                 if (this.searchFilterApplied() && !this.checkAllStatus) {
                     this.checkAllSearchRegister.add(this.filterControl.value);
                 }
@@ -376,8 +395,7 @@ var MultiselectDropdown = /** @class */ (function () {
                 }
                 this.load();
             }
-            this.onModelChange(this.model);
-            this.onModelTouched();
+            this.fireModelChange();
         }
     };
     MultiselectDropdown.prototype.uncheckAll = function () {
@@ -387,7 +405,7 @@ var MultiselectDropdown = /** @class */ (function () {
             var unCheckedOptions_1 = (!this.searchFilterApplied() ? this.model
                 : this.filteredOptions.map(function (option) { return option.id; }));
             // set unchecked options only to the ones that were checked
-            unCheckedOptions_1 = checkedOptions.filter(function (item) { return unCheckedOptions_1.includes(item); });
+            unCheckedOptions_1 = checkedOptions.filter(function (item) { return _this.model.includes(item); });
             this.model = this.model.filter(function (id) {
                 if (((unCheckedOptions_1.indexOf(id) < 0) && (_this.settings.minSelectionLimit === undefined)) || ((unCheckedOptions_1.indexOf(id) < _this.settings.minSelectionLimit))) {
                     return true;
@@ -397,14 +415,14 @@ var MultiselectDropdown = /** @class */ (function () {
                     return false;
                 }
             });
-            if (this.settings.selectAddedValues) {
+            if (this.settings.isLazyLoad && this.settings.selectAddedValues) {
                 if (this.searchFilterApplied()) {
                     if (this.checkAllSearchRegister.has(this.filterControl.value)) {
                         this.checkAllSearchRegister.delete(this.filterControl.value);
                         this.checkAllSearchRegister.forEach(function (searchTerm) {
-                            var filterOptions = this.applyFilters(this.options.filter(function (option) { return unCheckedOptions_1.includes(option.name); }), searchTerm);
-                            this.addChecks(filterOptions);
-                        }.bind(this));
+                            var filterOptions = _this.applyFilters(_this.options.filter(function (option) { return unCheckedOptions_1.includes(option.id); }), searchTerm);
+                            _this.addChecks(filterOptions);
+                        });
                     }
                 }
                 else {
@@ -413,8 +431,7 @@ var MultiselectDropdown = /** @class */ (function () {
                 }
                 this.load();
             }
-            this.onModelChange(this.model);
-            this.onModelTouched();
+            this.fireModelChange();
         }
     };
     MultiselectDropdown.prototype.preventCheckboxCheck = function (event, option) {
@@ -459,8 +476,8 @@ var MultiselectDropdown = /** @class */ (function () {
     MultiselectDropdown.decorators = [
         { type: Component, args: [{
                     selector: 'ss-multiselect-dropdown',
-                    template: '<div class="dropdown" [ngClass]="settings.containerClasses" [class.open]="isVisible"><button type="button" class="dropdown-toggle" [ngClass]="settings.buttonClasses" (click)="toggleDropdown()" [disabled]="disabled">{{ title }}<span class="caret"></span></button><ul #scroller *ngIf="isVisible" class="dropdown-menu" (scroll)="settings.isLazyLoad ? checkScrollPosition($event) : null" (wheel)="settings.stopScrollPropagation ? checkScrollPropagation($event, scroller) : null" [class.pull-right]="settings.pullRight" [class.dropdown-menu-right]="settings.pullRight" [style.max-height]="settings.maxHeight" style="display: block; height: auto; overflow-y: auto"><li class="dropdown-item search" *ngIf="settings.enableSearch"><div class="input-group input-group-sm"><span class="input-group-addon" id="sizing-addon3"><i class="fa fa-search"></i></span> <input type="text" class="form-control" placeholder="{{ texts.searchPlaceholder }}" aria-describedby="sizing-addon3" [formControl]="filterControl" autofocus> <span class="input-group-btn" *ngIf="filterControl.value.length > 0"><button class="btn btn-default btn-secondary" type="button" (click)="clearSearch($event)"><i class="fa fa-times"></i></button></span></div></li><li class="dropdown-divider divider" *ngIf="settings.enableSearch"></li><li class="dropdown-item check-control check-control-check" *ngIf="settings.showCheckAll && !disabledSelection"><a href="javascript:;" role="menuitem" tabindex="-1" (click)="checkAll()"><span style="width: 16px" [ngClass]="{\'glyphicon glyphicon-ok\': settings.checkedStyle !== \'fontawesome\',\'fa fa-check\': settings.checkedStyle === \'fontawesome\'}"></span> {{ texts.checkAll }}</a></li><li class="dropdown-item check-control check-control-uncheck" *ngIf="settings.showUncheckAll && !disabledSelection"><a href="javascript:;" role="menuitem" tabindex="-1" (click)="uncheckAll()"><span style="width: 16px" [ngClass]="{\'glyphicon glyphicon-remove\': settings.checkedStyle !== \'fontawesome\',\'fa fa-times\': settings.checkedStyle === \'fontawesome\'}"></span> {{ texts.uncheckAll }}</a></li><li *ngIf="settings.showCheckAll || settings.showUncheckAll" class="dropdown-divider divider"></li><li *ngIf="!renderItems" class="dropdown-item empty">{{ texts.searchNoRenderText }}</li><li *ngIf="renderItems && !renderFilteredOptions.length" class="dropdown-item empty">{{ texts.searchEmptyResult }}</li><li class="dropdown-item" *ngFor="let option of renderFilteredOptions" (click)="setSelected($event, option)" [ngStyle]="getItemStyle(option)" [ngClass]="option.classes" [class.dropdown-header]="option.isLabel"><a *ngIf="!option.isLabel; else label" href="javascript:;" role="menuitem" tabindex="-1" [style.padding-left]="this.parents.length>0&&this.parents.indexOf(option.id)<0&&\'30px\'" [ngStyle]="getItemStyleSelectionDisabled()"><ng-container [ngSwitch]="settings.checkedStyle"><input *ngSwitchCase="\'checkboxes\'" type="checkbox" [checked]="isSelected(option)" (click)="preventCheckboxCheck($event, option)" [disabled]="isCheckboxDisabled(option)" [ngStyle]="getItemStyleSelectionDisabled()" > <span *ngSwitchCase="\'glyphicon\'" style="width: 16px" class="glyphicon" [class.glyphicon-ok]="isSelected(option)" [class.glyphicon-lock]="isCheckboxDisabled(option)"></span> <span *ngSwitchCase="\'fontawesome\'" style="width: 16px;display: inline-block"><i *ngIf="isSelected(option)" class="fa fa-check" aria-hidden="true"></i> <i *ngIf="isCheckboxDisabled(option)" class="fa fa-lock" aria-hidden="true"></i></span></ng-container><span [ngClass]="settings.itemClasses" [class.disabled]="isCheckboxDisabled(option)" [style.font-weight]="this.parents.indexOf(option.id)>=0?\'bold\':\'normal\'">{{ option.name }}</span></a><ng-template #label><span [class.disabled]="isCheckboxDisabled()">{{ option.name }}</span></ng-template></li></ul></div>',
-                    styles: ['a {  outline: none !important;}.dropdown-inline {  display: inline-block;}.dropdown-toggle .caret {  margin-left: 4px;  white-space: nowrap;  display: inline-block;}'],
+                    template: '<div class="dropdown" [ngClass]="settings.containerClasses" [class.open]="isVisible"><button type="button" class="dropdown-toggle" [ngClass]="settings.buttonClasses" (click)="toggleDropdown()" [disabled]="disabled">{{ title }}<span class="caret"></span></button><ul #scroller *ngIf="isVisible" class="dropdown-menu" [ngClass]="{\'chunkydropdown-menu\': settings.checkedStyle == \'visual\' }" (scroll)="settings.isLazyLoad ? checkScrollPosition($event) : null" (wheel)="settings.stopScrollPropagation ? checkScrollPropagation($event, scroller) : null" [class.pull-right]="settings.pullRight" [class.dropdown-menu-right]="settings.pullRight" [style.max-height]="settings.maxHeight" style="display: block; height: auto; overflow-y: auto"><li class="dropdown-item search" *ngIf="settings.enableSearch"><div class="input-group input-group-sm"><span class="input-group-addon" id="sizing-addon3"><i class="fa fa-search"></i></span> <input type="text" class="form-control" placeholder="{{ texts.searchPlaceholder }}" aria-describedby="sizing-addon3" [formControl]="filterControl" autofocus> <span class="input-group-btn" *ngIf="filterControl.value.length > 0"><button class="btn btn-default btn-secondary" type="button" (click)="clearSearch($event)"><i class="fa fa-times"></i></button></span></div></li><li class="dropdown-divider divider" *ngIf="settings.enableSearch"></li><li class="dropdown-item check-control check-control-check" *ngIf="settings.showCheckAll && !disabledSelection" (click)="checkAll()"><a href="javascript:;" role="menuitem" tabindex="-1"><span style="width: 16px" [ngClass]="{\'glyphicon glyphicon-ok\': settings.checkedStyle !== \'fontawesome\',\'fa fa-check\': settings.checkedStyle === \'fontawesome\'}"></span> {{ texts.checkAll }}</a></li><li class="dropdown-item check-control check-control-uncheck" *ngIf="settings.showUncheckAll && !disabledSelection" (click)="uncheckAll()"><a href="javascript:;" role="menuitem" tabindex="-1"><span style="width: 16px" [ngClass]="{\'glyphicon glyphicon-remove\': settings.checkedStyle !== \'fontawesome\',\'fa fa-times\': settings.checkedStyle === \'fontawesome\'}"></span> {{ texts.uncheckAll }}</a></li><li *ngIf="settings.showCheckAll || settings.showUncheckAll" class="dropdown-divider divider"></li><li *ngIf="!renderItems" class="dropdown-item empty">{{ texts.searchNoRenderText }}</li><li *ngIf="renderItems && !renderFilteredOptions.length" class="dropdown-item empty">{{ texts.searchEmptyResult }}</li><li class="dropdown-item" *ngFor="let option of renderFilteredOptions" (click)="setSelected($event, option)" [ngClass] = "{\'active\': isSelected(option) }" [ngStyle]="getItemStyle(option)" [ngClass]="option.classes" [class.dropdown-header]="option.isLabel"><a *ngIf="!option.isLabel; else label" href="javascript:;" role="menuitem" tabindex="-1" [style.padding-left]="this.parents.length>0&&this.parents.indexOf(option.id)<0&&\'30px\'" [ngStyle]="getItemStyleSelectionDisabled()"><ng-container [ngSwitch]="settings.checkedStyle"><input *ngSwitchCase="\'checkboxes\'" type="checkbox" [checked]="isSelected(option)" (click)="preventCheckboxCheck($event, option)" [disabled]="isCheckboxDisabled(option)" [ngStyle]="getItemStyleSelectionDisabled()" > <span *ngSwitchCase="\'glyphicon\'" style="width: 16px" class="glyphicon" [class.glyphicon-ok]="isSelected(option)" [class.glyphicon-lock]="isCheckboxDisabled(option)"></span> <span *ngSwitchCase="\'fontawesome\'" style="width: 16px;display: inline-block"><i *ngIf="isSelected(option)" class="fa fa-check" aria-hidden="true"></i> <i *ngIf="isCheckboxDisabled(option)" class="fa fa-lock" aria-hidden="true"></i> </span><span *ngSwitchCase="\'visual\'" style="display:block;float:left; border-radius: 0.2em; border: 0.1em solid rgba(44, 44, 44, 0.63);background:rgba(0, 0, 0, 0.1);width: 5.5em"><div class="slider" [ngClass]="{\'slideron\': isSelected(option)}"><img *ngIf="option.image != null" [src]="option.image" style="height: 100%; width: 100%; object-fit: contain"><div *ngIf="option.image == null" style="height: 100%; width: 100%;text-align: center; display: table; background-color:rgba(0, 0, 0, 0.74)"><div class="content_wrapper"><span style="font-size:3em;color:white" class="glyphicon glyphicon-eye-close"></span></div></div></div></span></ng-container><span [ngClass] = "{\'chunkyrow\': settings.checkedStyle == \'visual\' }" [ngClass]="settings.itemClasses" [class.disabled]="isCheckboxDisabled(option)" [style.font-weight]="this.parents.indexOf(option.id)>=0?\'bold\':\'normal\'">{{ option.name }}</span></a><ng-template #label><span [class.disabled]="isCheckboxDisabled()">{{ option.name }}</span></ng-template></li></ul></div>',
+                    styles: ['a {  outline: none !important;}.dropdown-inline {  display: inline-block;}.dropdown-toggle .caret {  margin-left: 4px;  white-space: nowrap;  display: inline-block;}.chunkydropdown-menu {  min-width: 20em;}.chunkyrow {  line-height: 2;  margin-left: 1em;  font-size: 2em;}.slider {  width:3.8em;  height:3.8em;  display:block;  -webkit-transition: all 0.125s linear;  -moz-transition: all 0.125s linear;  -o-transition: all 0.125s linear;  transition: all 0.125s linear;  margin-left: 0.125em;  margin-top: auto;}.slideron {  margin-left: 1.35em;}.content_wrapper{  display: table-cell;  vertical-align: middle;}'],
                     providers: [MULTISELECT_VALUE_ACCESSOR, MultiSelectSearchFilter]
                 },] },
     ];
@@ -484,7 +501,7 @@ var MultiselectDropdown = /** @class */ (function () {
         'onRemoved': [{ type: Output },],
         'onLazyLoad': [{ type: Output },],
         'onFilter': [{ type: Output },],
-        'onClick': [{ type: HostListener, args: ['document: click', ['$event.target'],] },],
+        'onClick': [{ type: HostListener, args: ['document: click', ['$event.target'],] }, { type: HostListener, args: ['document: touchstart', ['$event.target'],] },],
     };
     return MultiselectDropdown;
 }());
