@@ -434,6 +434,7 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
 
   addChecks(options) {
     let checkedOptions = options
+<<<<<<< HEAD
       .filter((option: IMultiSelectOption) => {
         if (!option.disabled || (this.model.indexOf(option.id) === -1 && !(this.settings.ignoreLabels && option.isLabel))) {
           this.onAdded.emit(option.id);
@@ -441,6 +442,15 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
         }
         return false;
       }).map((option: IMultiSelectOption) => option.id);
+=======
+    .filter(function(option: IMultiSelectOption) {
+      if (!option.disabled || (this.model.indexOf(option.id) === -1)) {
+        this.onAdded.emit(option.id);
+        return true;
+      }
+      return false;
+    }.bind(this)).map((option: IMultiSelectOption) => option.id);
+>>>>>>> 1b5daf52fb4b5a6396d3253946344fa1123b2416
     this.model = this.model.concat(checkedOptions);
   }
 
