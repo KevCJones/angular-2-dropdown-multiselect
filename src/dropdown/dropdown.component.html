@@ -54,11 +54,7 @@
                 </div>
             </span>
           </ng-container>
-<<<<<<< HEAD
-          <span [ngClass] = "{'chunkyrow': settings.checkedStyle == 'visual' }" [ngClass]="settings.itemClasses" [style.font-weight]="this.parents.indexOf(option.id)>=0?'bold':'normal'">
-=======
-          <span [ngClass]="settings.itemClasses" [class.disabled]="isCheckboxDisabled(option)" [style.font-weight]="this.parents.indexOf(option.id)>=0?'bold':'normal'">
->>>>>>> added disabled classs and input handling
+          <span [ngClass] = "{'chunkyrow': settings.checkedStyle == 'visual' }" [ngClass]="settings.itemClasses" [class.disabled]="isCheckboxDisabled(option)" [style.font-weight]="this.parents.indexOf(option.id)>=0?'bold':'normal'">
             {{ option.name }}
           </span>
         </a>

@@ -434,7 +434,6 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
 
   addChecks(options) {
     let checkedOptions = options
-<<<<<<< HEAD
       .filter((option: IMultiSelectOption) => {
         if (!option.disabled || (this.model.indexOf(option.id) === -1 && !(this.settings.ignoreLabels && option.isLabel))) {
           this.onAdded.emit(option.id);
@@ -442,15 +441,6 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
         }
         return false;
       }).map((option: IMultiSelectOption) => option.id);
-=======
-    .filter(function(option: IMultiSelectOption) {
-      if (!option.disabled || (this.model.indexOf(option.id) === -1)) {
-        this.onAdded.emit(option.id);
-        return true;
-      }
-      return false;
-    }.bind(this)).map((option: IMultiSelectOption) => option.id);
->>>>>>> stop clicking and checking and validation report if disabled item selected via model
     this.model = this.model.concat(checkedOptions);
   }
 
