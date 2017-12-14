@@ -168,8 +168,12 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
   }
 
   getItemStyle(option: IMultiSelectOption): any {
+    const style = {};
     if (!option.isLabel) {
-      return { 'cursor': 'pointer' };
+      style['cursor'] = 'pointer';
+    }
+    if (option.disabled) {
+      style['cursor'] = 'default';
     }
   }
 
@@ -291,11 +295,20 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
   }
 
   validate(_c: AbstractControl): { [key: string]: any; } {
-    return (this.model && this.model.length) ? null : {
-      required: {
-        valid: false,
-      },
-    };
+     if(this.model && this.model.length) {
+       const disabled = this.options.filter( o => this.model.indexOf(o.id) && !o.disabled);
+       return disabled && !disabled.length ? null : {
+        selection: {
+          valid: false
+        }
+       }
+     } else {
+      return {
+        required: {
+          valid: false,
+        },
+      };
+    }
   }
 
   registerOnValidatorChange(_fn: () => void): void {
@@ -320,6 +333,10 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
 
   setSelected(_event: Event, option: IMultiSelectOption) {
     if (option.isLabel) {
+      return;
+    }
+
+    if (option.disabled) {
       return;
     }
 
@@ -417,13 +434,23 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
 
   addChecks(options) {
     let checkedOptions = options
+<<<<<<< HEAD
       .filter((option: IMultiSelectOption) => {
-        if (this.model.indexOf(option.id) === -1 && !(this.settings.ignoreLabels && option.isLabel)) {
+        if (!option.disabled || (this.model.indexOf(option.id) === -1 && !(this.settings.ignoreLabels && option.isLabel))) {
           this.onAdded.emit(option.id);
           return true;
         }
         return false;
       }).map((option: IMultiSelectOption) => option.id);
+=======
+    .filter(function(option: IMultiSelectOption) {
+      if (!option.disabled || (this.model.indexOf(option.id) === -1)) {
+        this.onAdded.emit(option.id);
+        return true;
+      }
+      return false;
+    }.bind(this)).map((option: IMultiSelectOption) => option.id);
+>>>>>>> stop clicking and checking and validation report if disabled item selected via model
     this.model = this.model.concat(checkedOptions);
   }
 
@@ -480,17 +507,17 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
   }
 
   preventCheckboxCheck(event: Event, option: IMultiSelectOption) {
-    if (this.settings.selectionLimit && !this.settings.autoUnselect &&
+    if (option.disabled || (this.settings.selectionLimit && !this.settings.autoUnselect &&
       this.model.length >= this.settings.selectionLimit &&
       this.model.indexOf(option.id) === -1 &&
       event.preventDefault
-    ) {
+    )) {
       event.preventDefault();
     }
   }
 
-  isCheckboxDisabled(): boolean {
-    return this.disabledSelection;
+  isCheckboxDisabled(option: IMultiSelectOption): boolean {
+    return this.disabledSelection || option.disabled;
   }
 
   checkScrollPosition(ev) {
