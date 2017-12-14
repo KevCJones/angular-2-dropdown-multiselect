@@ -5,3 +5,4 @@ src/dropdown/*.js
 src/dropdown/*.js.map
 /compiled
 .vscode/*
+.idea

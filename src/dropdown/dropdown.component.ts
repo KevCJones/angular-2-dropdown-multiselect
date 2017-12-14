@@ -1,5 +1,4 @@
 import 'rxjs/add/operator/takeUntil';
-import 'rxjs/add/operator/takeUntil';
 
 import {
   Component,
@@ -14,7 +13,7 @@ import {
   OnDestroy,
   OnInit,
   Output,
-  SimpleChanges
+  SimpleChanges,
 } from '@angular/core';
 import {
   AbstractControl,
@@ -67,6 +66,7 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
   @Output() onFilter: Observable<string> = this.filterControl.valueChanges;
 
   @HostListener('document: click', ['$event.target'])
+  @HostListener('document: touchstart', ['$event.target'])
   onClick(target: HTMLElement) {
     if (!this.isVisible || !this.settings.closeOnClickOutside) return;
     let parentFound = false;
@@ -85,8 +85,10 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
   destroyed$ = new Subject<any>();
 
   filteredOptions: IMultiSelectOption[] = [];
+  lazyLoadOptions: IMultiSelectOption[] = [];
   renderFilteredOptions: IMultiSelectOption[] = [];
   model: any[] = [];
+  prevModel: any[] = [];
   parents: any[];
   title: string;
   differ: any;
@@ -126,7 +128,8 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
     isLazyLoad: false,
     stopScrollPropagation: false,
     loadViewDistance: 1,
-    selectAddedValues: false
+    selectAddedValues: false,
+    ignoreLabels: false
   };
   defaultTexts: IMultiSelectTexts = {
     checkAll: 'Check all',
@@ -188,12 +191,12 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
 
     this.filterControl.valueChanges
       .takeUntil(this.destroyed$)
-      .subscribe(function () {
+      .subscribe(() => {
         this.updateRenderItems();
         if (this.settings.isLazyLoad) {
           this.load();
         }
-      }.bind(this));
+      });
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -204,10 +207,10 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
         .map(option => option.parentId);
       this.updateRenderItems();
 
-      if (this.settings.selectAddedValues && this.loadedValueIds.length === 0) {
+      if (this.settings.isLazyLoad && this.settings.selectAddedValues && this.loadedValueIds.length === 0) {
         this.loadedValueIds = this.loadedValueIds.concat(changes.options.currentValue.map(value => value.id));
       }
-      if (this.settings.selectAddedValues && changes.options.previousValue) {
+      if (this.settings.isLazyLoad && this.settings.selectAddedValues && changes.options.previousValue) {
         let addedValues = changes.options.currentValue.filter(
           value => this.loadedValueIds.indexOf(value.id) === -1
         );
@@ -225,8 +228,7 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
         this.updateTitle();
       }
 
-      this.onModelChange(this.model);
-      this.onModelTouched();
+      this.fireModelChange();
     }
 
     if (changes['texts'] && !changes['texts'].isFirstChange()) {
@@ -251,6 +253,14 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
       this.settings.searchMaxLimit,
       this.settings.searchMaxRenderedItems
     ));
+  }
+
+  fireModelChange() {
+    if (this.model != this.prevModel) {
+      this.prevModel = this.model;
+      this.onModelChange(this.model);
+      this.onModelTouched();
+    }
   }
 
   onModelChange: Function = (_: any) => { };
@@ -336,12 +346,15 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
       }
       const index = this.model.indexOf(option.id);
       const isAtSelectionLimit = this.settings.selectionLimit > 0 && this.model.length >= this.settings.selectionLimit;
-      if (index > -1) {
-        const removeItem = (idx, id): void => {
-          this.model.splice(idx, 1);
-          this.onRemoved.emit(id);
-        };
+      const removeItem = (idx, id): void => {
+        this.model.splice(idx, 1);
+        this.onRemoved.emit(id);
+        if (this.settings.isLazyLoad && this.lazyLoadOptions.some(val => val.id === id)) {
+          this.lazyLoadOptions.splice(this.lazyLoadOptions.indexOf(this.lazyLoadOptions.find(val => val.id === id)), 1);
+        }
+      };
 
+      if (index > -1) {
         if ((this.settings.minSelectionLimit === undefined) || (this.numSelected > this.settings.minSelectionLimit)) {
           removeItem(index, option.id);
         }
@@ -359,11 +372,14 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
         const addItem = (id): void => {
           this.model.push(id);
           this.onAdded.emit(id);
+          if (this.settings.isLazyLoad && !this.lazyLoadOptions.some(val => val.id === id)) {
+            this.lazyLoadOptions.push(option);
+          }
         };
 
         addItem(option.id);
         if (!isAtSelectionLimit) {
-          if (option.parentId) {
+          if (option.parentId && !this.settings.ignoreLabels) {
             let children = this.options.filter(child => child.id !== option.id && child.parentId === option.parentId);
             if (children.every(child => this.model.indexOf(child.id) > -1)) {
               addItem(option.parentId);
@@ -373,16 +389,14 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
             children.forEach(child => addItem(child.id));
           }
         } else {
-          const removedOption = this.model.shift();
-          this.onRemoved.emit(removedOption);
+          removeItem(0, this.model[0]);
         }
       }
       if (this.settings.closeOnSelect) {
         this.toggleDropdown();
       }
       this.model = this.model.slice();
-      this.onModelChange(this.model);
-      this.onModelTouched();
+      this.fireModelChange();
     }
   }
 
@@ -391,12 +405,17 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
   }
 
   updateTitle() {
+    let numSelectedOptions = this.options.length;
+    if (this.settings.ignoreLabels) {
+      numSelectedOptions = this.options.filter((option: IMultiSelectOption) => !option.isLabel).length;
+    }
     if (this.numSelected === 0 || this.settings.fixedTitle) {
       this.title = (this.texts) ? this.texts.defaultTitle : '';
-    } else if (this.settings.displayAllSelectedText && this.model.length === this.options.length) {
+    } else if (this.settings.displayAllSelectedText && this.model.length === numSelectedOptions) {
       this.title = (this.texts) ? this.texts.allSelected : '';
     } else if (this.settings.dynamicTitleMaxItems && this.settings.dynamicTitleMaxItems >= this.numSelected) {
-      this.title = this.options
+      let useOptions = this.settings.isLazyLoad && this.lazyLoadOptions.length ? this.lazyLoadOptions : this.options;
+      this.title = useOptions
         .filter((option: IMultiSelectOption) =>
           this.model.indexOf(option.id) > -1
         )
@@ -415,20 +434,20 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
 
   addChecks(options) {
     let checkedOptions = options
-    .filter(function(option: IMultiSelectOption) {
-      if (!option.disabled || (this.model.indexOf(option.id) === -1)) {
-        this.onAdded.emit(option.id);
-        return true;
-      }
-      return false;
-    }.bind(this)).map((option: IMultiSelectOption) => option.id);
+      .filter((option: IMultiSelectOption) => {
+        if (!option.disabled || (this.model.indexOf(option.id) === -1 && !(this.settings.ignoreLabels && option.isLabel))) {
+          this.onAdded.emit(option.id);
+          return true;
+        }
+        return false;
+      }).map((option: IMultiSelectOption) => option.id);
     this.model = this.model.concat(checkedOptions);
   }
 
   checkAll() {
     if (!this.disabledSelection) {
       this.addChecks(!this.searchFilterApplied() ? this.options : this.filteredOptions);
-      if (this.settings.selectAddedValues) {
+      if (this.settings.isLazyLoad && this.settings.selectAddedValues) {
         if (this.searchFilterApplied() && !this.checkAllStatus) {
           this.checkAllSearchRegister.add(this.filterControl.value);
         } else {
@@ -437,8 +456,7 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
         }
         this.load();
       }
-      this.onModelChange(this.model);
-      this.onModelTouched();
+      this.fireModelChange();
     }
   }
 
@@ -449,7 +467,7 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
         : this.filteredOptions.map((option: IMultiSelectOption) => option.id)
       );
       // set unchecked options only to the ones that were checked
-      unCheckedOptions = checkedOptions.filter(item => unCheckedOptions.includes(item));
+      unCheckedOptions = checkedOptions.filter(item => this.model.includes(item));
       this.model = this.model.filter((id: number) => {
         if (((unCheckedOptions.indexOf(id) < 0) && (this.settings.minSelectionLimit === undefined)) || ((unCheckedOptions.indexOf(id) < this.settings.minSelectionLimit))) {
           return true;
@@ -458,14 +476,14 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
           return false;
         }
       });
-      if (this.settings.selectAddedValues) {
+      if (this.settings.isLazyLoad && this.settings.selectAddedValues) {
         if (this.searchFilterApplied()) {
           if (this.checkAllSearchRegister.has(this.filterControl.value)) {
             this.checkAllSearchRegister.delete(this.filterControl.value);
-            this.checkAllSearchRegister.forEach(function(searchTerm) {
-              let filterOptions = this.applyFilters(this.options.filter(option => unCheckedOptions.includes(option.name)), searchTerm);
+            this.checkAllSearchRegister.forEach((searchTerm) => {
+              let filterOptions = this.applyFilters(this.options.filter(option => unCheckedOptions.includes(option.id)), searchTerm);
               this.addChecks(filterOptions);
-            }.bind(this));
+            });
           }
         } else {
           this.checkAllSearchRegister.clear();
@@ -474,8 +492,7 @@ export class MultiselectDropdown implements OnInit, OnChanges, DoCheck, OnDestro
         this.load();
 
       }
-      this.onModelChange(this.model);
-      this.onModelTouched();
+      this.fireModelChange();
     }
   }
 
